@@ -119,7 +119,11 @@ class CaffePersister[T: ClassTag](val prototxtPath: String,
           var topName = preNodeTopList(0)
           var i = 0
           while (i < nextNodesName.size) {
-            top2Layers(s"topName_$i") = ArrayBuffer(nextNodesName(i))
+            if (top2Layers.contains(s"$topName")) {
+              top2Layers(s"$topName").append(nextNodesName(i))
+            } else {
+              top2Layers(s"$topName") = ArrayBuffer(nextNodesName(i))
+            }
             i += 1
           }
         }
@@ -169,7 +173,11 @@ class CaffePersister[T: ClassTag](val prototxtPath: String,
           val topList = curr.getTopList.asScala
           var i = 0
           while (i < nextModules.size) {
-            top2Layers(topList(i)) = ArrayBuffer(nextModules(i).element.getName())
+            if (top2Layers.contains(topList.head)) {
+              top2Layers(topList.head).append(nextModules(i).element.getName())
+            } else {
+              top2Layers(topList.head) = ArrayBuffer(nextModules(i).element.getName())
+            }
             i += 1
           }
         }

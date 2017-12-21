@@ -587,11 +587,7 @@ class V1LayerConverter[T: ClassTag](implicit ev: TensorNumeric[T]) extends Conve
     })
 
     // set top list
-    i = 0
-    while (i < nextSize) {
-      layerParameter.addTop(s"$layerName$i")
-      i += 1
-    }
+    layerParameter.addTop(s"$layerName")
   }
 
   private def setBlobs(layerParameterBuilder: V1LayerParameter.Builder,
