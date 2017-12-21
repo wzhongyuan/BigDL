@@ -549,6 +549,11 @@ class V1LayerConverter[T: ClassTag](implicit ev: TensorNumeric[T]) extends Conve
     res
   }
 
+  override  protected def toCaffeInput(module : AbstractModule[Activity, Activity, T],
+    bottoms : ArrayBuffer[String], nextSize : Int): Seq[GeneratedMessage] = {
+    throw new UnsupportedOperationException("Not support input in caffe layer v1")
+  }
+
   private def toCaffeWithWeightAndBiasOnly(module : AbstractModule[Activity, Activity, T],
     bottoms : ArrayBuffer[String], nextSize : Int): V1LayerParameter.Builder = {
 

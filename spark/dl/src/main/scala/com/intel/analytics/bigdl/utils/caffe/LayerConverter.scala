@@ -645,6 +645,14 @@ class LayerConverter[T: ClassTag](implicit ev: TensorNumeric[T]) extends Convert
     res
   }
 
+  override  protected def toCaffeInput(module : AbstractModule[Activity, Activity, T],
+    bottoms : ArrayBuffer[String], nextSize : Int): Seq[GeneratedMessage] = {
+    val layerParameter = toCaffeWithWeightAndBiasOnly(module, bottoms, nextSize).
+      setType("Input")
+    layerParameter.setInputParam(toCaffeInputParam(module))
+    Seq(layerParameter.build)
+  }
+
   private def toCaffeWithWeightAndBiasOnly(module : AbstractModule[Activity, Activity, T],
     bottoms : ArrayBuffer[String], nextSize : Int): LayerParameter.Builder = {
 
@@ -679,12 +687,7 @@ class LayerConverter[T: ClassTag](implicit ev: TensorNumeric[T]) extends Convert
     })
 
     // set top list
-    i = 0
-    while (i < nextSize) {
-      // layerParameter.setTop(i, s"$layerName$i")
-      layerParameter.addTop(s"$layerName$i")
-      i += 1
-    }
+    layerParameter.addTop(s"$layerName")
   }
 
   private def setBlobs(layerParameterBuilder: LayerParameter.Builder,

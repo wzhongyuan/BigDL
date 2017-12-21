@@ -304,6 +304,7 @@ abstract class Converter[T: ClassTag](implicit ev: TensorNumeric[T]) {
       case linear : Linear[_] => toCaffeInnerProduct(moduleNode, bottoms, nextSize)
       case dropout : Dropout[_] => toCaffeDropOut(moduleNode, bottoms, nextSize)
       case logSoftMax : LogSoftMax[_] => toCaffeLogSoftMax(moduleNode, bottoms, nextSize)
+      case softMax : SoftMax[_] => toCaffeLogSoftMax(moduleNode, bottoms, nextSize)
       case tanh : Tanh[_] => toCaffeTanh(moduleNode, bottoms, nextSize)
       case sigmoid : Sigmoid[_] => toCaffeSigmoid(moduleNode, bottoms, nextSize)
       case abs : Abs[_, _] => toCaffeAbs(moduleNode, bottoms, nextSize)
@@ -327,6 +328,7 @@ abstract class Converter[T: ClassTag](implicit ev: TensorNumeric[T]) {
       case cadd : CAdd[_] => toCaffeEltWiseAdd(moduleNode, bottoms, nextSize)
       case csub : CSubTable[_] => toCaffeEltWiseSub(moduleNode, bottoms, nextSize)
       case sequantial : Sequential[_] => toCaffeSequential(moduleNode, bottoms, nextSize)
+      case input : Input[_] => toCaffeInput(moduleNode, bottoms, nextSize)
       case _ => throw  new CaffeConversionException(s"${moduleNode} is not supported")
     }
     model
@@ -423,6 +425,9 @@ abstract class Converter[T: ClassTag](implicit ev: TensorNumeric[T]) {
     bottoms : ArrayBuffer[String], nextSize : Int): Seq[GeneratedMessage]
 
   protected def toCaffeSequential(module : AbstractModule[Activity, Activity, T],
+    bottoms : ArrayBuffer[String], nextSize : Int): Seq[GeneratedMessage]
+
+  protected def toCaffeInput(module : AbstractModule[Activity, Activity, T],
     bottoms : ArrayBuffer[String], nextSize : Int): Seq[GeneratedMessage]
 
   protected def toCaffeConvolutionParam(module : AbstractModule[Activity, Activity, T])
@@ -587,6 +592,14 @@ abstract class Converter[T: ClassTag](implicit ev: TensorNumeric[T]) {
     shapeBlob.build
   }
 
+  protected def toCaffeInputParam(module : AbstractModule[Activity, Activity, T])
+  : InputParameter = {
+    val layer = module.asInstanceOf[Input[T]]
+    val inputParam = InputParameter.newBuilder
+    inputParam.addShape(BlobShape.newBuilder().addDim(10).addDim(3).addDim(224).addDim(224).build())
+    inputParam.build()
+  }
+
   protected def toCaffeThresholdParam(module : AbstractModule[Activity, Activity, T])
   : ThresholdParameter = {
     val layer = classOf[Threshold[T]].cast(module)
@@ -667,5 +680,15 @@ abstract class Converter[T: ClassTag](implicit ev: TensorNumeric[T]) {
     caffe2BigDL("MEMORYDATA") = fromCaffeInput
     caffe2BigDL("ACCURACY") = null
     caffe2BigDL("SILENCE") = null
+  }
+}
+
+object Main {
+  def main(args: Array[String]): Unit = {
+    val model = Module.loadModule[Float]("/home/yihengw/new_model_inception_v1/inception-v1.bigdl").asInstanceOf[Graph[Float]]
+    model.evaluate()
+    val node = model.node("inception_3a/pool")
+    model.saveCaffe("/home/yihengw/new_model_inception_v1/bigdl_for_caffe.protxt",
+      "/home/yihengw/new_model_inception_v1/bigdl_for_caffe.bin")
   }
 }
