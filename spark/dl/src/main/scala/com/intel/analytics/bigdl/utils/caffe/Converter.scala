@@ -682,13 +682,3 @@ abstract class Converter[T: ClassTag](implicit ev: TensorNumeric[T]) {
     caffe2BigDL("SILENCE") = null
   }
 }
-
-object Main {
-  def main(args: Array[String]): Unit = {
-    val model = Module.loadModule[Float]("/home/yihengw/new_model_inception_v1/inception-v1.bigdl").asInstanceOf[Graph[Float]]
-    model.evaluate()
-    val node = model.node("inception_3a/pool")
-    model.saveCaffe("/home/yihengw/new_model_inception_v1/bigdl_for_caffe.protxt",
-      "/home/yihengw/new_model_inception_v1/bigdl_for_caffe.bin")
-  }
-}

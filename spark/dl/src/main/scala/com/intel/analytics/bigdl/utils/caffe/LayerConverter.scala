@@ -23,7 +23,7 @@ import caffe.Caffe.{BlobProto, PoolingParameter, _}
 import com.google.protobuf.GeneratedMessage
 import com.intel.analytics.bigdl.nn.Graph._
 import com.intel.analytics.bigdl.nn._
-import com.intel.analytics.bigdl.nn.abstractnn.{AbstractModule, Activity}
+import com.intel.analytics.bigdl.nn.abstractnn.{AbstractModule, Activity, DataFormat}
 import com.intel.analytics.bigdl.tensor.Tensor
 import com.intel.analytics.bigdl.tensor.TensorNumericMath.TensorNumeric
 import com.intel.analytics.bigdl.utils.Table
@@ -233,7 +233,7 @@ class LayerConverter[T: ClassTag](implicit ev: TensorNumeric[T]) extends Convert
     setConnections(layerParameter, bottoms, nextSize)
 
     // copy weight and bias
-    val (weightBuilder, biasBuilder) = copyParam(module)
+    val (weightBuilder, biasBuilder) = copyConvParam(module.asInstanceOf[SpatialConvolution[T]])
 
     // get convolution param map
     val layerParams = toCaffeConvolutionParam(module)
@@ -419,7 +419,7 @@ class LayerConverter[T: ClassTag](implicit ev: TensorNumeric[T]) extends Convert
     setConnections(layerParameter, bottoms, nextSize)
 
     // copy weight and bias
-    val (weightBuilder, biasBuilder) = copyParam(module)
+    val (weightBuilder, biasBuilder) = copyLinearParam(module.asInstanceOf[Linear[T]])
 
     val (inputSize, outputSize, withBias) = toCaffeInnerProductParam(module)
 
@@ -733,6 +733,87 @@ class LayerConverter[T: ClassTag](implicit ev: TensorNumeric[T]) extends Convert
         bias.size().foreach(dim => biasShape.addDim(dim.toLong))
         biasBlobBuilder.setShape(biasShape.build)
       }
+    }
+    (weightBlobBuilder, biasBlobBuilder)
+  }
+
+  private def copyConvParam(module : SpatialConvolution[T]) :
+  (BlobProto.Builder, BlobProto.Builder) = {
+    // weight and bias may be empty
+    var weightBlobBuilder : BlobProto.Builder = null
+    var biasBlobBuilder : BlobProto.Builder = null
+    val name = module.getName
+
+    weightBlobBuilder = BlobProto.newBuilder()
+    val weight = module.weight
+    val weightData = weight.storage().array()
+    var i = 0
+    while (i < weightData.length) {
+      weightBlobBuilder.addData(ev.toType[Float](weightData(i)))
+      i += 1
+    }
+    if (module.format == DataFormat.NCHW) {
+      weightBlobBuilder.setNum(weight.size(2))
+      weightBlobBuilder.setChannels(weight.size(3))
+      weightBlobBuilder.setHeight(weight.size(4))
+      weightBlobBuilder.setWidth(weight.size(5))
+    } else {
+      weightBlobBuilder.setNum(weight.size(5))
+      weightBlobBuilder.setChannels(weight.size(4))
+      weightBlobBuilder.setHeight(weight.size(2))
+      weightBlobBuilder.setWidth(weight.size(3))
+    }
+
+    if (module.withBias) {
+      biasBlobBuilder = BlobProto.newBuilder()
+      val bias = module.bias
+      val biasData = bias.storage().array()
+      var i = 0
+      while (i < biasData.length) {
+        biasBlobBuilder.addData(ev.toType[Float](biasData(i)))
+        i += 1
+      }
+      biasBlobBuilder.setNum(1)
+      biasBlobBuilder.setChannels(1)
+      biasBlobBuilder.setHeight(1)
+      biasBlobBuilder.setWidth(bias.size(1))
+    }
+    (weightBlobBuilder, biasBlobBuilder)
+  }
+
+  private def copyLinearParam(module : Linear[T]) :
+  (BlobProto.Builder, BlobProto.Builder) = {
+    // weight and bias may be empty
+    var weightBlobBuilder : BlobProto.Builder = null
+    var biasBlobBuilder : BlobProto.Builder = null
+    val name = module.getName
+
+    weightBlobBuilder = BlobProto.newBuilder()
+    val weight = module.weight
+    val weightData = weight.storage().array()
+    var i = 0
+    while (i < weightData.length) {
+      weightBlobBuilder.addData(ev.toType[Float](weightData(i)))
+      i += 1
+    }
+    weightBlobBuilder.setNum(1)
+    weightBlobBuilder.setChannels(1)
+    weightBlobBuilder.setHeight(weight.size(1))
+    weightBlobBuilder.setWidth(weight.size(2))
+
+    if (module.withBias) {
+      biasBlobBuilder = BlobProto.newBuilder()
+      val bias = module.bias
+      val biasData = bias.storage().array()
+      var i = 0
+      while (i < biasData.length) {
+        biasBlobBuilder.addData(ev.toType[Float](biasData(i)))
+        i += 1
+      }
+      biasBlobBuilder.setNum(1)
+      biasBlobBuilder.setChannels(1)
+      biasBlobBuilder.setHeight(1)
+      biasBlobBuilder.setWidth(bias.size(1))
     }
     (weightBlobBuilder, biasBlobBuilder)
   }
