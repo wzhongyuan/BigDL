@@ -21,6 +21,8 @@ import java.nio.file.{Files, Path}
 
 import org.apache.log4j.Logger
 
+import scala.io.Source
+
 object LocalImageFiles {
   Class.forName("javax.imageio.ImageIO")
   Class.forName("java.awt.color.ICC_ColorSpace")
@@ -41,6 +43,14 @@ object LocalImageFiles {
       .toArray.sortWith(_ < _).zipWithIndex.map(c => c._1 -> (c._2 + 1)).toMap
   }
 
+  private[bigdl] def readCategoryLabels(path: Path): Map[String, Int] = {
+    import scala.collection.JavaConverters._
+    Source.fromURI(path.toUri).getLines.map(line => {
+      val data = line.split(" ")
+      (data(0), data(1).toInt)
+    }).toMap
+  }
+
   /**
    * Read all data file paths into one array. Each path is associate with its label.
    *
@@ -51,6 +61,20 @@ object LocalImageFiles {
     val directoryStream = Files.newDirectoryStream(path)
     println(s"Start to read directories $path")
     val labelMap = readLabels(path)
+    import scala.collection.JavaConverters._
+    directoryStream.asScala.flatMap(dir => {
+      println(s"Find class ${dir.getFileName} -> ${labelMap(dir.getFileName.toString)}")
+      Files.newDirectoryStream(dir).asScala.map(p =>
+        LocalLabeledImagePath(labelMap(dir.getFileName.toString).toFloat, p)).toSeq
+    }).toArray.sortWith(
+      _.path.getFileName.toString < _.path.getFileName.toString
+    )
+  }
+
+  private def readPathsWithLabel(path: Path, categoryPath: Path): Array[LocalLabeledImagePath] = {
+    val directoryStream = Files.newDirectoryStream(path)
+    println(s"Start to read directories $path")
+    val labelMap = readCategoryLabels(categoryPath)
     import scala.collection.JavaConverters._
     directoryStream.asScala.flatMap(dir => {
       println(s"Find class ${dir.getFileName} -> ${labelMap(dir.getFileName.toString)}")
@@ -86,5 +110,10 @@ object LocalImageFiles {
   private[bigdl] def readPaths(path: Path, hasLabel: Boolean = true)
   : Array[LocalLabeledImagePath] = {
     if (hasLabel) readPathsWithLabel(path) else readPathsNoLabel(path)
+  }
+
+  private[bigdl] def readPaths(path: Path, categoryPath : Path)
+  : Array[LocalLabeledImagePath] = {
+    readPathsWithLabel(path, categoryPath)
   }
 }

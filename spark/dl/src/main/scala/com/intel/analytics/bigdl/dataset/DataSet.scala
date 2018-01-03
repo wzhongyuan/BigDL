@@ -418,6 +418,11 @@ object DataSet {
       new LocalArrayDataSet[LocalLabeledImagePath](buffer)
     }
 
+    def paths(path: Path, categoryFilePath: Path): LocalDataSet[LocalLabeledImagePath] = {
+      val buffer = LocalImageFiles.readPaths(path, categoryFilePath)
+      new LocalArrayDataSet[LocalLabeledImagePath](buffer)
+    }
+
     /**
      * Extract all images under the given path into a Local DataSet. The images are all labeled.
      * @param path
