@@ -76,7 +76,7 @@ class CaffePersister[T: ClassTag](val prototxtPath: String,
   // create caffe layers graph based on BigDL execution plan
   private def convertToCaffe() : Unit = {
     val graph = toGraph()
-    val top2Layers = new mutable.HashMap[String, String]()
+    val top2Layers = new mutable.HashMap[String, ArrayBuffer[String]]()
     val layers = new mutable.HashMap[String, GeneratedMessage]()
     val executions = graph.getSortedForwardExecutions
     netparam.setName(module.getName)
@@ -99,21 +99,31 @@ class CaffePersister[T: ClassTag](val prototxtPath: String,
         if (useV2) {
           var preNodeTopList = layers(preNode.element.getName).
             asInstanceOf[LayerParameter].getTopList.asScala
-          preNodeTopList = preNodeTopList.filter(top => {top2Layers(top) == module.getName()})
+          preNodeTopList = preNodeTopList.filter(top => {
+            top2Layers(top).contains(module.getName())})
           var topName = preNodeTopList(0)
           var i = 0
           while (i < nextNodesName.size) {
-            top2Layers(s"$topName") = nextNodesName(i)
+            if (top2Layers.contains(s"$topName")) {
+              top2Layers(s"$topName").append(nextNodesName(i))
+            } else {
+              top2Layers(s"$topName") = ArrayBuffer(nextNodesName(i))
+            }
             i += 1
           }
         } else {
           var preNodeTopList = layers(preNode.element.getName).
             asInstanceOf[V1LayerParameter].getTopList.asScala
-          preNodeTopList = preNodeTopList.filter(top => {top2Layers(top) == module.getName()})
+          preNodeTopList = preNodeTopList.filter(top => {
+            top2Layers(top).contains(module.getName())})
           var topName = preNodeTopList(0)
           var i = 0
           while (i < nextNodesName.size) {
-            top2Layers(s"topName_$i") = nextNodesName(i)
+            if (top2Layers.contains(s"$topName")) {
+              top2Layers(s"$topName").append(nextNodesName(i))
+            } else {
+              top2Layers(s"$topName") = ArrayBuffer(nextNodesName(i))
+            }
             i += 1
           }
         }
@@ -127,8 +137,7 @@ class CaffePersister[T: ClassTag](val prototxtPath: String,
           preTops.foreach(top => bottomList.append(top))
         })
         bottomList = bottomList.filter(bottom => {
-          val nextModule = top2Layers(bottom)
-          nextModule.equals(execution.element.getName)
+          top2Layers(bottom).contains(execution.element.getName)
         })
         val nextModules = execution.nextNodes.filter(_.element != null)
         if (useV2) {
@@ -144,7 +153,11 @@ class CaffePersister[T: ClassTag](val prototxtPath: String,
           val topList = curr.getTopList.asScala
           var i = 0
           while (i < nextModules.size) {
-            top2Layers(topList(i)) = nextModules(i).element.getName()
+            if (top2Layers.contains(topList.head)) {
+              top2Layers(topList.head).append(nextModules(i).element.getName())
+            } else {
+              top2Layers(topList.head) = ArrayBuffer(nextModules(i).element.getName())
+            }
             i += 1
           }
 
@@ -160,7 +173,11 @@ class CaffePersister[T: ClassTag](val prototxtPath: String,
           val topList = curr.getTopList.asScala
           var i = 0
           while (i < nextModules.size) {
-            top2Layers(topList(i)) = nextModules(i).element.getName()
+            if (top2Layers.contains(topList.head)) {
+              top2Layers(topList.head).append(nextModules(i).element.getName())
+            } else {
+              top2Layers(topList.head) = ArrayBuffer(nextModules(i).element.getName())
+            }
             i += 1
           }
         }

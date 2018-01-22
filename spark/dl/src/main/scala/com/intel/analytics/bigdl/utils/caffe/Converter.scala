@@ -304,6 +304,7 @@ abstract class Converter[T: ClassTag](implicit ev: TensorNumeric[T]) {
       case linear : Linear[_] => toCaffeInnerProduct(moduleNode, bottoms, nextSize)
       case dropout : Dropout[_] => toCaffeDropOut(moduleNode, bottoms, nextSize)
       case logSoftMax : LogSoftMax[_] => toCaffeLogSoftMax(moduleNode, bottoms, nextSize)
+      case softMax : SoftMax[_] => toCaffeLogSoftMax(moduleNode, bottoms, nextSize)
       case tanh : Tanh[_] => toCaffeTanh(moduleNode, bottoms, nextSize)
       case sigmoid : Sigmoid[_] => toCaffeSigmoid(moduleNode, bottoms, nextSize)
       case abs : Abs[_] => toCaffeAbs(moduleNode, bottoms, nextSize)
@@ -327,6 +328,7 @@ abstract class Converter[T: ClassTag](implicit ev: TensorNumeric[T]) {
       case cadd : CAdd[_] => toCaffeEltWiseAdd(moduleNode, bottoms, nextSize)
       case csub : CSubTable[_] => toCaffeEltWiseSub(moduleNode, bottoms, nextSize)
       case sequantial : Sequential[_] => toCaffeSequential(moduleNode, bottoms, nextSize)
+      case input : Input[_] => toCaffeInput(moduleNode, bottoms, nextSize)
       case _ => throw  new CaffeConversionException(s"${moduleNode} is not supported")
     }
     model
@@ -423,6 +425,9 @@ abstract class Converter[T: ClassTag](implicit ev: TensorNumeric[T]) {
     bottoms : ArrayBuffer[String], nextSize : Int): Seq[GeneratedMessage]
 
   protected def toCaffeSequential(module : AbstractModule[Activity, Activity, T],
+    bottoms : ArrayBuffer[String], nextSize : Int): Seq[GeneratedMessage]
+
+  protected def toCaffeInput(module : AbstractModule[Activity, Activity, T],
     bottoms : ArrayBuffer[String], nextSize : Int): Seq[GeneratedMessage]
 
   protected def toCaffeConvolutionParam(module : AbstractModule[Activity, Activity, T])
@@ -585,6 +590,14 @@ abstract class Converter[T: ClassTag](implicit ev: TensorNumeric[T]) {
       i += 1
     }
     shapeBlob.build
+  }
+
+  protected def toCaffeInputParam(module : AbstractModule[Activity, Activity, T])
+  : InputParameter = {
+    val layer = module.asInstanceOf[Input[T]]
+    val inputParam = InputParameter.newBuilder
+    inputParam.addShape(BlobShape.newBuilder().addDim(10).addDim(3).addDim(224).addDim(224).build())
+    inputParam.build()
   }
 
   protected def toCaffeThresholdParam(module : AbstractModule[Activity, Activity, T])

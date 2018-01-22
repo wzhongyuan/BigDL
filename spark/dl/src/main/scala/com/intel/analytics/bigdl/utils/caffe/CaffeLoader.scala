@@ -254,6 +254,7 @@ class CaffeLoader[T: ClassTag](prototxtPath: String, modelPath: String,
   private def copyParameters(model: Module[T]): Module[T] = {
     loadCaffe(prototxtPath, modelPath)
     val parameterTable = model.getParametersTable()
+    val node = model.asInstanceOf[Graph[T]].node("inception_3b/1x1")
 
     parameterTable.foreach {
       case (name: String, params: Table) =>
