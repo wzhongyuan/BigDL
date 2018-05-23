@@ -18,6 +18,8 @@ package com.intel.analytics.bigdl.models.resnet
 import com.intel.analytics.bigdl.DataSet
 import com.intel.analytics.bigdl.dataset._
 import com.intel.analytics.bigdl.dataset.image._
+import com.intel.analytics.bigdl.transform.vision.image.{MTLabeledImageFeatureToBatch, MatToTensor, PixelBytesToMat}
+import com.intel.analytics.bigdl.transform.vision.image.augmentation.{CaffeImgCropper, CaffeImgNormalizer, CaffeImgRandomAspect, RandomResize}
 import org.apache.spark.SparkContext
 
 /**
@@ -111,19 +113,23 @@ object ImageNetDataSet extends ResNetDataSet {
 
   override def valDataSet(path: String, sc: SparkContext, imageSize: Int, batchSize: Int)
   : DataSet[MiniBatch[Float]] = {
-    DataSet.SeqFileFolder.files(path, sc, 1000).transform(
-      MTLabeledBGRImgToBatch[ByteRecord](
+    DataSet.SeqFileFolder.filesToImageFeatureDataset(path, sc, 1000).transform(
+      MTLabeledImageFeatureToBatch(
         width = imageSize,
         height = imageSize,
         batchSize = batchSize,
-        transformer = (BytesToBGRImg()
-          -> BGRImgNormalizer(0.485, 0.456, 0.406, 0.229, 0.224, 0.225))
-          -> BGRImgCropper(imageSize, imageSize, CropCenter)
-      ))
+        transformer = PixelBytesToMat() ->
+          RandomResize(256, 256) ->
+          CaffeImgCropper(224, 224, false, CropCenter) ->
+          CaffeImgNormalizer(104, 117, 123, 0.0078125) ->
+          MatToTensor[Float](), toRGB = false
+      )
+    )
   }
 
   override def trainDataSet(path: String, sc: SparkContext, imageSize: Int, batchSize: Int)
   : DataSet[MiniBatch[Float]] = {
+/*
     DataSet.SeqFileFolder.files(path, sc, 1000).transform(
       MTLabeledBGRImgToBatch[ByteRecord](
         width = imageSize,
@@ -134,5 +140,18 @@ object ImageNetDataSet extends ResNetDataSet {
           -> BGRImgNormalizer(0.485, 0.456, 0.406, 0.229, 0.224, 0.225))
           -> HFlip(0.5)
       ))
+*/
+    DataSet.SeqFileFolder.filesToImageFeatureDataset(path, sc, 1000).transform(
+      MTLabeledImageFeatureToBatch(
+        width = imageSize,
+        height = imageSize,
+        batchSize = batchSize,
+        transformer = PixelBytesToMat() ->
+          CaffeImgRandomAspect() ->
+          CaffeImgCropper(224, 224, true, CropRandom) ->
+          CaffeImgNormalizer(104, 117, 123, 0.0078125) ->
+          MatToTensor[Float](), toRGB = false
+      )
+    )
   }
 }
