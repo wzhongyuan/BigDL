@@ -79,7 +79,7 @@ object TrainImageNet {
       println(model)
 
       val optimMethod = if (param.stateSnapshot.isDefined) {
-        val optim = OptimMethod.load[Float](param.stateSnapshot.get).asInstanceOf[LarsSGD[Float]]
+        val optim = OptimMethod.load[Float](param.stateSnapshot.get).asInstanceOf[SGD[Float]]
         val baseLr = param.learningRate
         val iterationsPerEpoch = math.ceil(1281167 / param.batchSize).toInt
         val warmUpIteration = iterationsPerEpoch * param.warmupEpoch
