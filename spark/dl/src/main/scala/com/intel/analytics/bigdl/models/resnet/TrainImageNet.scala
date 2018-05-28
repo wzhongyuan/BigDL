@@ -55,7 +55,7 @@ object TrainImageNet {
 
       val batchSize = param.batchSize
       val (imageSize, dataSetType, maxEpoch, dataSet) =
-        (224, DatasetType.ImageNet, 90, ImageNetDataSet)
+        (224, DatasetType.ImageNet, param.nepochs, ImageNetDataSet)
 
       val trainDataSet = dataSet.trainDataSet(param.folder + "/train", sc, imageSize, batchSize)
 
