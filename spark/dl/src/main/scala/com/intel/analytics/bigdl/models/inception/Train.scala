@@ -77,12 +77,11 @@ object TrainInceptionV1 {
         val warmupDelta = if (warmupIteration == 0) 0.0
           else (param.maxLr.getOrElse(param.learningRate) - param.learningRate) / warmupIteration
         val polyIteration = maxIteration - warmupIteration
-       // val lrSchedule = SequentialSchedule(iterationPerEpoch)
-        //  .add(Warmup(warmupDelta), warmupIteration).add(Poly(0.5, polyIteration), polyIteration)
-        val multiStep = MultiStep(Array(4680, 9360, 12480), 0.1)
+        val lrSchedule = SequentialSchedule(iterationPerEpoch)
+          .add(Warmup(warmupDelta), warmupIteration).add(Poly(0.5, polyIteration), polyIteration)
         new SGD[Float](learningRate = param.learningRate, learningRateDecay = 0.0,
           weightDecay = param.weightDecay, momentum = 0.9, dampening = 0.0, nesterov = false,
-          learningRateSchedule = multiStep)
+          learningRateSchedule = lrSchedule)
       }
 
       val optimizer = Optimizer(
