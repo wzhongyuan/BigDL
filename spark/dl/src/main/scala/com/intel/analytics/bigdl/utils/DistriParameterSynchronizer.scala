@@ -203,13 +203,14 @@ class BlockManagerParameterSynchronizer[T: ClassTag](partitionID: Int,
 
   override def init(name: String, globalSize: Int, priority: Int = 1): Unit = {
     val partitionToCount = if (globalSize < totalPartition) globalSize else totalPartition
-    syncMetaMap.putIfAbsent(name, SyncMeta(name, 1, priority, globalSize, partitionToCount,
+    syncMetaMap.putIfAbsent(name, SyncMeta(name, 0, priority, globalSize, partitionToCount,
       new ConcurrentHashMap[Int, CompressedTensor[T]](),
       new ConcurrentHashMap[Int, Tensor[T]]()))
   }
 
   override def put(name: String, parameter: Tensor[T]): Unit = {
     val syncMeta = syncMetaMap.get(name)
+    syncMeta.counter += 1
     val asyncTask = new AsyncTask(syncMeta, parameter)
     val futureTask = new FutureTask[Tensor[T]](asyncTask)
     val futureAsyncTask = new AsyncFutureTask(futureTask, syncMeta.priority)
@@ -221,10 +222,13 @@ class BlockManagerParameterSynchronizer[T: ClassTag](partitionID: Int,
   }
 
   override def get(name: String): Tensor[T] = {
+    val syncMeta = syncMetaMap.get(name)
+    // no need to do aggregation for first forward
+    if (syncMeta.counter == 0) {
+      return null
+    }
     require(syncResults.contains(name), "put must be done before get")
     val res = syncResults.get(name).get.get()
-    val syncMeta = syncMetaMap.get(name)
-    syncMeta.counter += 1
     res
   }
 
