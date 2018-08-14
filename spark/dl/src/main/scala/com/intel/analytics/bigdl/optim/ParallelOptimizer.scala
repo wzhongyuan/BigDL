@@ -101,6 +101,7 @@ object ParallelOptimizer {
 
     val _subModelNumber = Engine.getEngineType() match {
       case MklBlas => coresPerNode
+      case MklDnn => 1
     }
     val driverState = T(
       "epoch" -> optimMethods.values.head.state("epoch"),
@@ -660,13 +661,12 @@ object ParallelOptimizer {
    * @param trainingModel the model is trained by optimizer
    * @return trained model
    */
-  private def getModel[T: ClassTag](
+   def getModel[T: ClassTag](
     models: RDD[Cache[T]],
     trainingModel: Module[T])(implicit ev: TensorNumeric[T]): Module[T] = {
     val partitionNum = models.partitions.length
     val extraState = models.map(_.localModels.head.getExtraParameter()).first()
     trainingModel.setExtraParameter(extraState)
-
     // make sure gradient is as the same length as weight
     val parameterArray = trainingModel.parameters()
     (0 until parameterArray._2.length).foreach(i =>
@@ -679,12 +679,16 @@ object ParallelOptimizer {
     val taskSize = size / partitionNum
     val extraSize = size % partitionNum
     val weights = models.mapPartitions(iter => {
-      val localWeights = iter.next.localModels.head.getParameters()._1
-      val partitionId = TaskContext.getPartitionId
+      val localCache = iter.next
+      val localModels = localCache.localModels
+      val localWeights = localModels.head.getParameters()._1
+      val synchronizer = localCache.parameterSynchronizer
+        .asInstanceOf[BlockManagerParameterSynchronizer[T]]
+      val partitionId = synchronizer.partitionID
       val start = partitionId * taskSize + math.min(partitionId, extraSize)
       val length = taskSize + (if (partitionId < extraSize) 1 else 0)
       val partitionWeight = Tensor[T](length)
-      (_classTag, ev).copy(localWeights.narrow(1, start + 1, length))
+      partitionWeight.copy(localWeights.narrow(1, start + 1, length))
       Iterator.single(Map(partitionId -> partitionWeight))
     }).reduce((a, b) => (a ++ b))
 

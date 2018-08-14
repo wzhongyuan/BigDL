@@ -301,9 +301,11 @@ abstract class AbstractModule[A <: Activity: ClassTag, B <: Activity: ClassTag, 
       if (this.parameters() != null) {
         val weights = this.getParameters()._1
         val grads = this.getParameterSynchronizer.get(this.getName)
-        val optimMethod = this.getOptimMethod
-        optimMethod.optimize(_ => (ev.fromType(0.0f), grads),
-          weights)
+        if (grads != null) {
+          val optimMethod = this.getOptimMethod
+          optimMethod.optimize(_ => (ev.fromType(0.0f), grads),
+            weights)
+        }
       }
     }
   }

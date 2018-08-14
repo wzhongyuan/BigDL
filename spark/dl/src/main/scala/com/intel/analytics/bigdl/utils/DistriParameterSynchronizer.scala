@@ -61,8 +61,8 @@ trait DistriParameterSynchronizer[T] {
   def clear(): Unit
 }
 
-class BlockManagerParameterSynchronizer[T: ClassTag](partitionID: Int,
-                                                     totalPartition: Int)
+class BlockManagerParameterSynchronizer[T: ClassTag](val partitionID: Int,
+                                                     val totalPartition: Int)
                                                     (implicit ev: TensorNumeric[T])
   extends DistriParameterSynchronizer[T] {
 

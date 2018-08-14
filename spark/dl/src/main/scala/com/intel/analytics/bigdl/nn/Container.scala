@@ -218,6 +218,9 @@ abstract class Container[A <: Activity : ClassTag,
     }
   }
 
+  override protected def updateParameter(): Unit = {}
+  override protected def asyncGradient(): Unit = {}
+
   /**
    * Check if some module is duplicated in the model
    */
