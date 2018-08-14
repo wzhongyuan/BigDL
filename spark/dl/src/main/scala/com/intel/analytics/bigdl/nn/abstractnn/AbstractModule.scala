@@ -303,6 +303,7 @@ abstract class AbstractModule[A <: Activity: ClassTag, B <: Activity: ClassTag, 
         val grads = this.getParameterSynchronizer.get(this.getName)
         if (grads != null) {
           val optimMethod = this.getOptimMethod
+          require(optimMethod != null, s"optim method for ${this.getName} cannot be null")
           optimMethod.optimize(_ => (ev.fromType(0.0f), grads),
             weights)
         }
@@ -336,7 +337,7 @@ abstract class AbstractModule[A <: Activity: ClassTag, B <: Activity: ClassTag, 
         val grads = this.getParameters()._2
          ParameterSynchronizer.syncData[T](partitionedId, grads)
         val modelGrandients = ParameterSynchronizer.collect[T](partitionedId).values.toArray.
-          asInstanceOf[Array[Tensor[T]]]
+          map(_.asInstanceOf[Tensor[T]])
         val active = ParameterSynchronizer.reset[T](partitionedId)
         if (active) {
           // aggregate local gradients
@@ -347,7 +348,7 @@ abstract class AbstractModule[A <: Activity: ClassTag, B <: Activity: ClassTag, 
           val extraTask = pLength % _subModelNumber
           val parallelNum = if (taskSize == 0) extraTask else _subModelNumber
           Engine.default.invokeAndWait((0 until parallelNum).map(tid => () => {
-            val offset = pOffset + tid * taskSize + math.min(tid, extraTask)
+            val offset = 1 + tid * taskSize + math.min(tid, extraTask)
             val length = taskSize + (if (tid < extraTask) 1 else 0)
             var i = 1
             while (i < modelGrandients.length) {

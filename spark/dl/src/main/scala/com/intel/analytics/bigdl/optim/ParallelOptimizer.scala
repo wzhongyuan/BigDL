@@ -233,8 +233,6 @@ object ParallelOptimizer {
          */
           val end = System.nanoTime()
           wallClockTime += end - start
-          val totalNumberFinished = ev.toType[Double](cached.parameterSynchronizer.
-            get("finished_threads_per_iteration").storage().array()(0))
           Iterator.single(finishedThreadSize, lossSum, recordsNum)
         }
       }.reduce((a, b) => (a._1 + b._1, a._2 + b._2, a._3 + b._3))
@@ -518,6 +516,8 @@ object ParallelOptimizer {
         val localModel = modelBroadcast.value(true)
         // differentiate partition models from each other by partition ID
         setModelId(localModel, partitionId)
+        // register local parameter synchronizer
+        registerLocalSynchronizer(localModel, executorCores)
         // set parameter synchronizer
         setDistriParameterSynchronizer(localModel, synchronizer, nExecutor)
         val localCriterion = broadcastCriterion.cloneCriterion()
@@ -562,9 +562,19 @@ object ParallelOptimizer {
 
   private def setModelId[T: ClassTag](model: Module[T], partitionId: Int): Unit = {
     model.setId(partitionId)
+
     if (model.isInstanceOf[Container[_, _, T]]) {
       model.asInstanceOf[Container[_, _, T]].modules.
         foreach(sub => setModelId(sub, partitionId))
+    }
+  }
+
+  private def registerLocalSynchronizer[T: ClassTag](model: Module[T],
+                                                     parallelism: Int): Unit = {
+    ParameterSynchronizer.register[T](s"${model.getName}_${model.getId}", parallelism)
+    if (model.isInstanceOf[Container[_, _, T]]) {
+      model.asInstanceOf[Container[_, _, T]].modules.
+        foreach(sub => registerLocalSynchronizer(sub, parallelism))
     }
   }
 
@@ -783,10 +793,14 @@ class ParallelOptimizer[T: ClassTag] (
     if (this.model.isInstanceOf[Container[_, _, T]]) {
       expandOptimMethodsForSubModules(this.model.
         asInstanceOf[Container[_, _, T]].modules,
-        optimMethodMap(this._model.getName), optimMethodMap)
+        optimMethodMap(this.model.getName), optimMethodMap)
     } else {
       require(optimMethodMap.contains(this._model.getName),
         "single layer model should have optim method set")
+    }
+
+    if (optimMethodMap.contains(this.model.getName)) {
+      this.model.setOptimMethod(optimMethodMap.get(this.model.getName).get)
     }
   }
 
@@ -796,6 +810,7 @@ class ParallelOptimizer[T: ClassTag] (
     subModules.foreach(sub => {
       if (optimMethodMap.get(sub.getName) == None) {
         require(parentMethod != null, s"${sub.getName}'s parent optim method should not be null")
+        sub.setOptimMethod(parentMethod)
         optimMethodMap(sub.getName) = parentMethod
       }
       if (sub.isInstanceOf[Container[_, _, T]]) {
