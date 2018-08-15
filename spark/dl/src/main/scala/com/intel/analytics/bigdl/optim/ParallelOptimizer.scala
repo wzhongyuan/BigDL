@@ -967,6 +967,12 @@ class ParallelOptimizer[T: ClassTag] (
     // Reset some internal states, so this or other optimizers can run optimize again
     clearState()
 
+    // release distributed synchronizer resources
+
+    models.foreach(modelIter => {
+      modelIter.parameterSynchronizer.clear
+    })
+
     // unpersist the model because the next time optimize is called, new `models` will be
     // created
     models.unpersist()
