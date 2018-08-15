@@ -333,6 +333,16 @@ object ParallelOptimizer {
           }
         }
 
+        // update parameters for last iteration
+        if (endWhen(driverState)) {
+          logger.info(s"training finished, updating all layers parameters")
+          models.mapPartitions(modelIter => {
+            val localModels = modelIter.next.localModels
+            localModels.foreach(localModel => updateLayerParameters(localModel))
+            Iterator.empty
+          }).collect
+        }
+
         validate(
           validationTrigger,
           validationDataSet,
@@ -370,6 +380,15 @@ object ParallelOptimizer {
           s"discarded. Only $numFinishedModelUpdates/$driverSubModelNum threads successfully " +
           s"completed training.")
       }
+    }
+  }
+
+  private def updateLayerParameters[T: ClassTag](module: Module[T]): Unit = {
+    module.updateParameter
+    if (module.isInstanceOf[Container[_, _, T]]) {
+      module.asInstanceOf[Container[_, _, T]].modules.foreach(sub => {
+        updateLayerParameters(sub)
+      })
     }
   }
 
@@ -513,7 +532,7 @@ object ParallelOptimizer {
       // initialize synchronizer with partition ID and parition number
       val synchronizer = new BlockManagerParameterSynchronizer[T](partitionId, nExecutor)
       val cached = (0 until _subModelNumber).map { _ =>
-        val localModel = modelBroadcast.value(true)
+        val localModel = modelBroadcast.value(true, false)
         // differentiate partition models from each other by partition ID
         setModelId(localModel, partitionId)
         // register local parameter synchronizer

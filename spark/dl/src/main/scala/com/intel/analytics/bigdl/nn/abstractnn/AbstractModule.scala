@@ -296,16 +296,18 @@ abstract class AbstractModule[A <: Activity: ClassTag, B <: Activity: ClassTag, 
     output
   }
 
-  protected def updateParameter(): Unit = {
+  private[bigdl] def updateParameter(): Unit = {
     if (this.getParameterSynchronizer() != null && this.isTraining) {
       if (this.parameters() != null) {
         val weights = this.getParameters()._1
+        val copy = Tensor[T]().resizeAs(weights).copy(weights)
         val grads = this.getParameterSynchronizer.get(this.getName)
         if (grads != null) {
           val optimMethod = this.getOptimMethod
           require(optimMethod != null, s"optim method for ${this.getName} cannot be null")
           optimMethod.optimize(_ => (ev.fromType(0.0f), grads),
             weights)
+          this.zeroGradParameters
         }
       }
     }
