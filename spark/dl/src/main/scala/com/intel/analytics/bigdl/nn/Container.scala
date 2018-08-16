@@ -218,7 +218,7 @@ abstract class Container[A <: Activity : ClassTag,
     }
   }
 
-  override protected def updateParameter(): Unit = {}
+  override private[bigdl] def updateParameter(): Unit = {}
   override protected def asyncGradient(): Unit = {}
 
   /**

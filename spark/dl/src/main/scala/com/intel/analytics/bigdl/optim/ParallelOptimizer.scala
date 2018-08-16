@@ -103,6 +103,8 @@ object ParallelOptimizer {
       case MklBlas => coresPerNode
       case MklDnn => 1
     }
+
+    Thread.sleep(5000)
     val driverState = T(
       "epoch" -> optimMethods.values.head.state("epoch"),
       "neval" -> optimMethods.values.head.state("neval"),
@@ -510,7 +512,6 @@ object ParallelOptimizer {
 
     val computeThresholdbatchSize = state.get[Int]("computeThresholdbatchSize").get
     val nExecutor = Engine.nodeNumber()
-    val executorCores = Engine.coreNumber()
 
     val models = dataset.originRDD().mapPartitions(_ => {
       val partitionId = TaskContext.getPartitionId
@@ -528,7 +529,7 @@ object ParallelOptimizer {
             "data to be distributed?")
         }
       }
-      Engine.setNodeAndCore(nExecutor, executorCores)
+      Engine.setNodeAndCore(nExecutor, coresPerNode)
       // initialize synchronizer with partition ID and parition number
       val synchronizer = new BlockManagerParameterSynchronizer[T](partitionId, nExecutor)
       val cached = (0 until _subModelNumber).map { _ =>
@@ -536,7 +537,7 @@ object ParallelOptimizer {
         // differentiate partition models from each other by partition ID
         setModelId(localModel, partitionId)
         // register local parameter synchronizer
-        registerLocalSynchronizer(localModel, executorCores)
+        registerLocalSynchronizer(localModel, coresPerNode)
         // set parameter synchronizer
         setDistriParameterSynchronizer(localModel, synchronizer, nExecutor)
         val localCriterion = broadcastCriterion.cloneCriterion()
@@ -867,12 +868,14 @@ class ParallelOptimizer[T: ClassTag] (
     val nodeNumber = Engine.nodeNumber()
     val coresPerNode = Engine.coreNumber()
 
+    val communicationCores : Int = System.getProperty("bigdl.communicationcores", "0").toInt
+
     val partitionNum = distDataset.originRDD().partitions.length
 
     prepareInput()
 
     models = ParallelOptimizer.initThreadModels(model, distDataset, criterion, state,
-      nodeNumber, coresPerNode, checkSingleton, validationMethods,
+      nodeNumber, coresPerNode - communicationCores, checkSingleton, validationMethods,
       optimMethods)
 
     if (checkpointPath.isDefined) {
@@ -892,7 +895,7 @@ class ParallelOptimizer[T: ClassTag] (
         ParallelOptimizer.optimize(
           model,
           distDataset,
-          coresPerNode,
+          coresPerNode - communicationCores,
           state,
           endWhen,
           metrics,
@@ -955,7 +958,9 @@ class ParallelOptimizer[T: ClassTag] (
               (moduleName, newOptimMethod)
             }
             models = ParallelOptimizer.initThreadModels(newModel, distDataset, criterion, state,
-              nodeNumber, coresPerNode, checkSingleton, validationMethods, optimMethods)
+              nodeNumber, coresPerNode - communicationCores,
+              checkSingleton, validationMethods, optimMethods)
+
           } else {
             throw t
           }
