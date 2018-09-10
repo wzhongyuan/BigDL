@@ -17,6 +17,7 @@
 package com.intel.analytics.bigdl.models.resnet
 
 import com.intel.analytics.bigdl._
+import com.intel.analytics.bigdl.dataset.{DistributedDataSet, MiniBatch}
 import com.intel.analytics.bigdl.models.inception.{ImageNet2012, ImageNet2012Val}
 import com.intel.analytics.bigdl.models.resnet.ResNet.{DatasetType, ShortcutType}
 import com.intel.analytics.bigdl.nn.abstractnn.AbstractModule
@@ -85,8 +86,8 @@ object TrainImageNet {
             batch size will increase the instability of convergence, the synchronization among BN
             layers basically do the parameters synchronization among cores and thus will avoid the
             instability while improves the performance a lot. */
-            val parallisim = Engine.coreNumber
-            setParallism(curModel, parallisim)
+          //  val parallisim = Engine.coreNumber
+          //  setParallism(curModel, parallisim)
 
             curModel
           case MklDnn =>
@@ -122,11 +123,22 @@ object TrainImageNet {
           learningRateSchedule = SGD.EpochDecayWithWarmUp(warmUpIteration, delta, imageNetDecay))
       }
 
-      val optimizer = Optimizer(
-        model = model,
-        dataset = trainDataSet,
-        criterion = new CrossEntropyCriterion[Float]()
-      )
+      val os = System.getProperty("optimizer", "Parallel")
+
+      val optimizer = if (os == "Parallel") {
+        new ParallelOptimizer[Float](
+          model,
+          trainDataSet.asInstanceOf[DistributedDataSet[MiniBatch[Float]]],
+          CrossEntropyCriterion[Float]()
+        )
+      } else {
+        Optimizer(
+          model = model,
+          dataset = trainDataSet,
+          criterion = new CrossEntropyCriterion[Float]()
+        )
+      }
+
       if (param.checkpoint.isDefined) {
         optimizer.setCheckpoint(param.checkpoint.get, Trigger.everyEpoch)
       }

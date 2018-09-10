@@ -17,6 +17,7 @@
 package com.intel.analytics.bigdl.nn.abstractnn
 
 import java.nio.ByteOrder
+import java.util.Date
 
 import com.intel.analytics.bigdl._
 import com.intel.analytics.bigdl.dataset.{LocalDataSet, MiniBatch, PaddingParam, Sample}
@@ -106,6 +107,34 @@ abstract class AbstractModule[A <: Activity: ClassTag, B <: Activity: ClassTag, 
     scaleB = b
     this
   }
+
+  /**
+   * parameter synchronizer for gradient synchronization
+   */
+  var _parameterSynchronizer: DistriParameterSynchronizer[T] = null
+
+  /**
+   * set parameter synchronizer
+   * @param parameterSynchronizer parameter synchronizer
+   */
+  def setParameterSynchronizer(parameterSynchronizer: DistriParameterSynchronizer[T]): Unit = {
+    _parameterSynchronizer = parameterSynchronizer
+  }
+
+
+  /**
+   * get parameter synchronizer
+   * @return parameter synchronizer
+   */
+  def getParameterSynchronizer(): DistriParameterSynchronizer[T] = _parameterSynchronizer
+
+  var _optimMethod: OptimMethod[T] = null
+
+  def setOptimMethod(optimMethod: OptimMethod[T]): Unit = {
+    _optimMethod = optimMethod
+  }
+
+  def getOptimMethod(): OptimMethod[T] = _optimMethod
 
   /**
    * Clear cached activities to save storage space or network bandwidth. Note that we use
@@ -252,9 +281,20 @@ abstract class AbstractModule[A <: Activity: ClassTag, B <: Activity: ClassTag, 
    * @return output data
    */
   final def forward(input: A): B = {
+    count += 1
     val before = System.nanoTime()
     try {
+      updateParameter
+      val updateEnd = System.nanoTime
+      val updateDuration = updateEnd - before
+      if (count > 10) {
+        updateTime += updateDuration
+      }
       updateOutput(input)
+      val outputEnd = System.nanoTime
+      if (count > 10) {
+        forwardComputingTime += outputEnd - updateEnd
+      }
     } catch {
       case l: LayerException =>
         l.layerMsg = this.toString() + "/" + l.layerMsg
@@ -262,9 +302,37 @@ abstract class AbstractModule[A <: Activity: ClassTag, B <: Activity: ClassTag, 
       case e: Throwable =>
         throw new LayerException(this.toString(), e)
     }
-    forwardTime += System.nanoTime() - before
-
+    if (count > 10) {
+      forwardTime += System.nanoTime() - before
+    }
     output
+  }
+
+  private[bigdl] def updateParameter(): Unit = {
+  //  println(s"~~~getting parameters for ${this.getName}")
+    if (this.getParameterSynchronizer() != null && this.isTraining) {
+      if (this.parameters() != null) {
+        val before = System.nanoTime()
+        val weights = this.getParameters()._1
+        val localGrads = this.getParameters()._2
+        val grads = this.getParameterSynchronizer.get(this.getName)
+        val syncEndTime = System.nanoTime()
+        if (count > 10) {
+          syncGradTime += syncEndTime - before
+        }
+        if (grads != null) {
+          if (localGrads != grads) {
+            localGrads.copy(grads)
+          }
+         // ParameterSynchronizer.await[T](s"${this.getName}_${this.getId}")
+          val optimMethod = this.getOptimMethod
+          require(optimMethod != null, s"optim method for ${this.getName} cannot be null")
+          optimMethod.optimize(_ => (ev.fromType(0.0f), localGrads),
+            weights)
+          this.zeroGradParameters
+        }
+      }
+    }
   }
 
   /**
@@ -281,9 +349,51 @@ abstract class AbstractModule[A <: Activity: ClassTag, B <: Activity: ClassTag, 
     val before = System.nanoTime()
     updateGradInput(input, gradOutput)
     accGradParameters(input, gradOutput)
-    backwardTime += System.nanoTime() - before
-
+    if (count > 10) {
+      backwardTime += System.nanoTime() - before
+    }
+    val asyncStart = System.nanoTime
+     asyncGradient
+    asyncGradientTime += System.nanoTime - asyncStart
     gradInput
+  }
+
+  protected def asyncGradient(): Unit = {
+    if (this.getParameterSynchronizer() != null) {
+      if (this.parameters() != null) {
+       // val partitionedId = s"${this.getName}_${this.getId}"
+        val grads = this.getParameters()._2
+        /*
+         ParameterSynchronizer.syncData[T](partitionedId, grads)
+        val modelGrandients = ParameterSynchronizer.collect[T](partitionedId).values.toArray.
+          map(_.asInstanceOf[Tensor[T]])
+        val active = ParameterSynchronizer.reset[T](partitionedId)
+        if (active) {
+          // aggregate local gradients
+          val _subModelNumber = modelGrandients.length
+          val pOffset = grads.storageOffset
+          val pLength = grads.nElement
+          val taskSize = pLength / _subModelNumber
+          val extraTask = pLength % _subModelNumber
+          val parallelNum = if (taskSize == 0) extraTask else _subModelNumber
+          Engine.default.invokeAndWait((0 until parallelNum).map(tid => () => {
+            val offset = 1 + tid * taskSize + math.min(tid, extraTask)
+            val length = taskSize + (if (tid < extraTask) 1 else 0)
+            var i = 1
+            while (i < modelGrandients.length) {
+              modelGrandients(0).narrow(1, offset, length)
+                .add(modelGrandients(i).narrow(1, offset, length))
+              i += 1
+            }
+          }))
+          modelGrandients(0).div(ev.fromType(_subModelNumber))
+          // put local aggregated gradients to global
+          this.getParameterSynchronizer.put(this.getName, modelGrandients(0))
+        }
+*/
+       this.getParameterSynchronizer.put(this.getName, grads)
+      }
+    }
   }
 
   /**
@@ -941,9 +1051,19 @@ abstract class AbstractModule[A <: Activity: ClassTag, B <: Activity: ClassTag, 
 
   }
 
-  protected var forwardTime = 0L
+  var count: Int = 0
 
-  protected var backwardTime = 0L
+  var forwardTime = 0L
+
+  var forwardComputingTime = 0L
+
+  var syncGradTime = 0L
+
+  var updateTime = 0L
+
+  var backwardTime = 0L
+
+  var asyncGradientTime = 0L
 
   private var scaleWCache: Double = scaleW
   private var scaleBCache: Double = scaleB
@@ -1115,5 +1235,10 @@ abstract class AbstractModule[A <: Activity: ClassTag, B <: Activity: ClassTag, 
    * JVM GC can't release them reliably.
    */
   def release(): Unit = {}
+
+  def getTimeStatistics(): (Double, Double, Double, Double, Double, Double) = {
+    (forwardTime / 10e9, forwardComputingTime / 10e9, syncGradTime / 10e9,
+      updateTime / 10e9, backwardTime / 10e9, asyncGradientTime / 10e9)
+  }
 }
 
