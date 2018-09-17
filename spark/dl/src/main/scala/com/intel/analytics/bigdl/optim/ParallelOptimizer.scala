@@ -328,7 +328,7 @@ object ParallelOptimizer {
             Iterator.empty
           }).collect
         }
-
+/*
         validate(
           validationTrigger,
           validationDataSet,
@@ -359,6 +359,7 @@ object ParallelOptimizer {
           optimMethods,
           trainingModel
         )
+        */
 
       } else {
         logger.info(s"Warning! Not enough training samples were successfully processed in this " +
