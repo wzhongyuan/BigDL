@@ -313,21 +313,18 @@ abstract class AbstractModule[A <: Activity: ClassTag, B <: Activity: ClassTag, 
     if (this.getParameterSynchronizer() != null && this.isTraining) {
       if (this.parameters() != null) {
         val before = System.nanoTime()
-        val weights = this.getParameters()._1
-        val localGrads = this.getParameters()._2
-        val grads = this.getParameterSynchronizer.get(this.getName)
+       // val weights = this.getParameters()._1
+       // val localGrads = this.getParameters()._2
+        val (weights, grads) = this.getParameterSynchronizer.get(this.getName)
         val syncEndTime = System.nanoTime()
         if (count > 10) {
           syncGradTime += syncEndTime - before
         }
         if (grads != null) {
-          if (localGrads != grads) {
-            localGrads.copy(grads)
-          }
          // ParameterSynchronizer.await[T](s"${this.getName}_${this.getId}")
           val optimMethod = this.getOptimMethod
           require(optimMethod != null, s"optim method for ${this.getName} cannot be null")
-          optimMethod.optimize(_ => (ev.fromType(0.0f), localGrads),
+          optimMethod.optimize(_ => (ev.fromType(0.0f), grads),
             weights)
           this.zeroGradParameters
         }
@@ -352,17 +349,19 @@ abstract class AbstractModule[A <: Activity: ClassTag, B <: Activity: ClassTag, 
     if (count > 10) {
       backwardTime += System.nanoTime() - before
     }
-    val asyncStart = System.nanoTime
-     asyncGradient
-    asyncGradientTime += System.nanoTime - asyncStart
+    asyncGradient
     gradInput
   }
 
-  protected def asyncGradient(): Unit = {
+  private[bigdl] def asyncGradient(): Unit = {
+    if (this.isInstanceOf[Container[_, _, T]]) {
+      throw new RuntimeException(s"${this.getName()} is a container, no need to sync")
+    }
+    val asyncStart = System.nanoTime
     if (this.getParameterSynchronizer() != null) {
       if (this.parameters() != null) {
        // val partitionedId = s"${this.getName}_${this.getId}"
-        val grads = this.getParameters()._2
+      //  val grads = this.getParameters()._2
         /*
          ParameterSynchronizer.syncData[T](partitionedId, grads)
         val modelGrandients = ParameterSynchronizer.collect[T](partitionedId).values.toArray.
@@ -391,7 +390,8 @@ abstract class AbstractModule[A <: Activity: ClassTag, B <: Activity: ClassTag, 
           this.getParameterSynchronizer.put(this.getName, modelGrandients(0))
         }
 */
-       this.getParameterSynchronizer.put(this.getName, grads)
+        this.getParameterSynchronizer.put(this.getName, null)
+        asyncGradientTime += System.nanoTime - asyncStart
       }
     }
   }

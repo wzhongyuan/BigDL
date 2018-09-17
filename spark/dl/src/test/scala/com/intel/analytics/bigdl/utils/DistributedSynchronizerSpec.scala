@@ -39,7 +39,7 @@ class DistributedSynchronizerSpec  extends FlatSpec with Matchers with BeforeAnd
       val partitionID = TaskContext.getPartitionId
       val sync = new BlockManagerParameterSynchronizer[Float](partitionID, partition)
       val tensor = Tensor[Float](10).fill(partitionID.toFloat + 1.0f)
-      sync.init(s"testPara", 10)
+    //  sync.init(s"testPara", 10)
       var res : Iterator[_] = null
       sync.put(s"testPara", tensor)
       res = Iterator.single(sync.get(s"testPara"))
@@ -61,7 +61,7 @@ class DistributedSynchronizerSpec  extends FlatSpec with Matchers with BeforeAnd
       val partitionID = TaskContext.getPartitionId
       val sync = new BlockManagerParameterSynchronizer[Float](partitionID, partition)
       val tensor = Tensor[Float](2).fill(partitionID.toFloat + 1.0f)
-      sync.init(s"testPara", 2)
+    //  sync.init(s"testPara", 2)
       var res : Iterator[_] = null
       sync.put(s"testPara", tensor)
       res = Iterator.single(sync.get(s"testPara"))
@@ -84,7 +84,7 @@ class DistributedSynchronizerSpec  extends FlatSpec with Matchers with BeforeAnd
       val sync = new BlockManagerParameterSynchronizer[Float](partitionID, partition)
       val tensor = Tensor[Float](20)
       val parameter = tensor.narrow(1, 10, 10).fill(partitionID.toFloat + 1.0f)
-      sync.init(s"testPara", 10)
+    //  sync.init(s"testPara", 10)
       var res : Iterator[_] = null
       sync.put(s"testPara", parameter)
       res = Iterator.single(sync.get(s"testPara"))

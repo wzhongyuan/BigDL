@@ -39,7 +39,8 @@ trait DistriParameterSynchronizer[T] {
    * @param globalSize total size of parameter
    * @param priority priority for this parameter
    */
-  def init(name: String, globalSize: Int, priority: Int = 1): Unit
+  def init(name: String, globalSize: Int, priority: Int = 1, weights: Tensor[T]
+          , grads: Tensor[T]): Unit
 
   /**
    * put parameter to global
@@ -53,7 +54,7 @@ trait DistriParameterSynchronizer[T] {
    * @param name  identifier for parameter
    * @return  parameter
    */
-  def get(name: String): Tensor[T]
+  def get(name: String): (Tensor[T], Tensor[T])
 
   /**
    * clear the synchronizer
@@ -201,7 +202,8 @@ class BlockManagerParameterSynchronizer[T: ClassTag](partitionID: Int,
 
   private val syncMetaMap = new ConcurrentHashMap[String, SyncMeta[T]]
 
-  override def init(name: String, globalSize: Int, priority: Int = 1): Unit = {
+  override def init(name: String, globalSize: Int, priority: Int = 1, tensor: Tensor[T]
+                    , grads: Tensor[T]): Unit = {
     val partitionToCount = if (globalSize < totalPartition) globalSize else totalPartition
     syncMetaMap.putIfAbsent(name, SyncMeta(name, 1, priority, globalSize, partitionToCount,
       new ConcurrentHashMap[Int, CompressedTensor[T]](),
@@ -220,12 +222,12 @@ class BlockManagerParameterSynchronizer[T: ClassTag](partitionID: Int,
     syncResults.put(name, futureTask)
   }
 
-  override def get(name: String): Tensor[T] = {
+  override def get(name: String): (Tensor[T], Tensor[T]) = {
     require(syncResults.contains(name), "put must be done before get")
     val res = syncResults.get(name).get.get()
     val syncMeta = syncMetaMap.get(name)
     syncMeta.counter += 1
-    res
+    (res, res)
   }
 
   private class ClearTask(name: String, counter: Int, partitionID: Int,
@@ -444,4 +446,6 @@ object BlockManagerParameterSynchronizer {
 case class SyncMeta[T](name: String, var counter: Int, priority: Int,
                        globalSize: Int, partitionToCount: Int,
                        stateOfWorld: ConcurrentHashMap[Int, CompressedTensor[T]],
-                      aggregatedStateOfWorld: ConcurrentHashMap[Int, Tensor[T]])
+                      aggregatedStateOfWorld: ConcurrentHashMap[Int, Tensor[T]],
+                      weights: Tensor[T] = null,
+                       grads: Tensor[T] = null)

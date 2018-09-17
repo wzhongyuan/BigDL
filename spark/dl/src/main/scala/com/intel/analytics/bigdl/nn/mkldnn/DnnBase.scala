@@ -279,6 +279,27 @@ trait MklDnnContainer extends DynamicContainer[Activity, Activity, Float] with M
   @transient protected lazy val reorderManager = new ReorderManager()
   protected var mklDnnModules : Array[MklDnnModule] = _
 
+  override def getTimeStatistics(): (Double, Double, Double, Double, Double, Double) = {
+ //   var forwardTime = 0.0
+ //   var forwardComputingTime = 0.0
+    var syncGradTime = 0.0
+    var updateTime = 0.0
+  //  var backwardTime = 0.0
+    var asyncGradientTime = 0.0
+    var i = 0
+    while (i < modules.length) {
+      val subTimes = modules(i).getTimeStatistics
+  //    forwardTime += subTimes._1
+ //     forwardComputingTime += subTimes._2
+      syncGradTime += subTimes._3
+      updateTime += subTimes._4
+    //  backwardTime += subTimes._5
+      asyncGradientTime += subTimes._6
+      i += 1
+    }
+    (forwardTime, forwardComputingTime, syncGradTime, updateTime, backwardTime, asyncGradientTime)
+  }
+
   override def add(module: AbstractModule[_ <: Activity, _ <: Activity, Float]): this.type = {
     require(mklDnnModules == null, "You should not call add after compilation")
     require(module.isInstanceOf[MklDnnModule], "layer should be MklDnnModule")

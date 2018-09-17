@@ -22,6 +22,7 @@ import java.util.Date
 import java.util.concurrent._
 import java.util.concurrent.atomic.AtomicInteger
 
+import com.intel.analytics.bigdl.mkl.hardware.Affinity
 import com.intel.analytics.bigdl.parameters.{CompressedTensor, FP16CompressedTensor, SerializerInstance}
 import com.intel.analytics.bigdl.tensor.Tensor
 import com.intel.analytics.bigdl.tensor.TensorNumericMath.TensorNumeric
@@ -70,7 +71,7 @@ class RefinedSynchronizer[T: ClassTag](val partitionID: Int,
 
   private val syncMetaMap = new ConcurrentHashMap[String, SyncMeta[T]]
 
-
+  val threadCount = new AtomicInteger(0)
 
   // thread pool to update sow on fetching completion
   private val fetchCompletionPool: ExecutorService = Executors.
@@ -97,6 +98,8 @@ class RefinedSynchronizer[T: ClassTag](val partitionID: Int,
   (0 until syncPoolSize).foreach(th => {
     fetchPool.submit(new Runnable {
       override def run(): Unit = {
+        val v = threadCount.incrementAndGet()
+        Affinity.setAffinity(40 + (v) % 4)
         longRunningThreads.add(Thread.currentThread)
         while (!shutdown) {
           try {
@@ -153,6 +156,33 @@ class RefinedSynchronizer[T: ClassTag](val partitionID: Int,
         t
       }
     })
+
+  (0 until workerPoolSize).map(wp => {
+    workerPool.submit(new Runnable {
+      override def run(): Unit = {
+        val v = threadCount.incrementAndGet()
+        Affinity.setAffinity(40 + (v) % 4)
+      }
+    })
+  })
+
+  (0 until fetchCompletionPoolSize).map(wp => {
+    fetchCompletionPool.submit(new Runnable {
+      override def run(): Unit = {
+        val v = threadCount.incrementAndGet()
+        Affinity.setAffinity(40 + (v) % 4)
+      }
+    })
+  })
+
+  (0 until clearPoolSize).map(wp => {
+    clearPool.submit(new Runnable {
+      override def run(): Unit = {
+        val v = threadCount.incrementAndGet()
+        Affinity.setAffinity(40 + (v) % 4)
+      }
+    })
+  })
 
   private class BlockFetchRequest(val syncMeta: SyncMeta[T],
                                   var priority: Int,
@@ -332,6 +362,7 @@ class RefinedSynchronizer[T: ClassTag](val partitionID: Int,
             aggregatedSyncThreads.foreach(aggr => syncPool.submit(aggr))
           } else if (state == 3 + syncMeta.partitionToCount) {
             // all complete
+        //    println(s"~~~ layer ${syncMeta.name} sync has been completed")
             asyncTaskReq.futureTask.run
           }
         }
@@ -348,17 +379,18 @@ class RefinedSynchronizer[T: ClassTag](val partitionID: Int,
       }
     })
 
-  override def init(name: String, globalSize: Int, priority: Int = 1): Unit = {
+  override def init(name: String, globalSize: Int, priority: Int = 1, weights: Tensor[T]
+                    , grads: Tensor[T]): Unit = {
     val partitionToCount = if (globalSize < totalPartition) globalSize else totalPartition
     syncMetaMap.putIfAbsent(name, SyncMeta(name, 0, priority, globalSize, partitionToCount,
       new ConcurrentHashMap[Int, CompressedTensor[T]](),
-      new ConcurrentHashMap[Int, Tensor[T]]()))
+      new ConcurrentHashMap[Int, Tensor[T]](), weights, grads))
   }
 
   override def put(name: String, parameter: Tensor[T]): Unit = {
     val syncMeta = syncMetaMap.get(name)
     syncMeta.counter += 1
-    val asyncTask = new AsyncTask(parameter)
+    val asyncTask = new AsyncTask(syncMeta.grads)
     val futureTask = new FutureTask[Tensor[T]](asyncTask)
     val syncRequest = new SyncRequest(new AtomicInteger(0), syncMeta, futureTask, asyncTask)
     asyncTaskWaitingQueue.add(syncRequest)
@@ -370,15 +402,15 @@ class RefinedSynchronizer[T: ClassTag](val partitionID: Int,
     syncResults.put(name, futureTask)
   }
 
-  override def get(name: String): Tensor[T] = {
+  override def get(name: String): (Tensor[T], Tensor[T]) = {
     val syncMeta = syncMetaMap.get(name)
     // no need to do aggregation for first forward
     if (syncMeta.counter == 0) {
-      return null
+      return (null, null)
     }
     require(syncResults.contains(name), "put must be done before get")
     val res = syncResults.get(name).get.get()
-    res
+    (syncMeta.weights, res)
   }
 
   override def clear(): Unit = {

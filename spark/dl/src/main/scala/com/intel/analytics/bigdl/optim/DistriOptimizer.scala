@@ -1005,6 +1005,21 @@ class DistriOptimizer[T: ClassTag] (
           isOverWrite,
           parameterProcessors.toArray
         )
+        val statistics = models.mapPartitions(iter => {
+          val model = iter.next().localModels.head
+          val times = if (model.isInstanceOf[com.intel.analytics.bigdl.nn.mkldnn.Sequential]) {
+            model.asInstanceOf[com.intel.analytics.bigdl.nn.mkldnn.Sequential].
+              getTimeStatistics()
+          } else {
+            (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+          }
+          Iterator.single(times)
+        }).reduce((a, b) => (a._1 + b._1, a._2 + b._2, a._3 + b._3,
+          a._4 + b._4, a._5 + b._5, a._6 + b._6))
+        println(s"~~~~~~~~~Total forwardtime ${statistics._1}, total forward computing time " +
+          s"${statistics._2}, total syncGradtime ${statistics._3}, total updateweights time " +
+          s"${statistics._4}, total backwardtime ${statistics._5}," +
+          s"asyncGradient time ${statistics._6}")
         retryNum = Int.MaxValue
       } catch {
         case e: IllegalArgumentException =>

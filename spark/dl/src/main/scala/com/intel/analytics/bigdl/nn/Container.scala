@@ -219,7 +219,7 @@ abstract class Container[A <: Activity : ClassTag,
   }
 
   override private[bigdl] def updateParameter(): Unit = {}
-  override protected def asyncGradient(): Unit = {}
+  override private[bigdl] def asyncGradient(): Unit = {}
 
   /**
    * Check if some module is duplicated in the model
@@ -233,5 +233,26 @@ abstract class Container[A <: Activity : ClassTag,
 
   override def release(): Unit = {
     modules.foreach(_.release())
+  }
+
+  override def getTimeStatistics(): (Double, Double, Double, Double, Double, Double) = {
+    var forwardTime = 0.0
+    var forwardComputingTime = 0.0
+    var syncGradTime = 0.0
+    var updateTime = 0.0
+    var backwardTime = 0.0
+    var asyncGradientTime = 0.0
+    var i = 0
+    while (i < modules.length) {
+      val subTimes = modules(i).getTimeStatistics
+      forwardTime += subTimes._1
+      forwardComputingTime += subTimes._2
+      syncGradTime += subTimes._3
+      updateTime += subTimes._4
+      backwardTime += subTimes._5
+      asyncGradientTime += subTimes._6
+      i += 1
+    }
+    (forwardTime, forwardComputingTime, syncGradTime, updateTime, backwardTime, asyncGradientTime)
   }
 }

@@ -27,6 +27,7 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.concurrent.Callable
 
+import com.intel.analytics.bigdl.Test.getExecutionOrder
 import com.intel.analytics.bigdl.models.utils.ModelBroadcast
 import com.intel.analytics.bigdl.nn.mkldnn.MklDnnContainer
 import com.intel.analytics.bigdl.nn.mkldnn.Phase.TrainingPhase
@@ -144,7 +145,7 @@ object ParallelOptimizer {
     val warmupIterationNum = state.get[Int]("warmupIterationNum").get
     val computeThresholdbatchSize = state.get[Int]("computeThresholdbatchSize").get
     val maxDropPercentage = state.get[Double]("maxDropPercentage").get
-    val iterationPerTime = 1
+    val iterationPerTime = 5
     val driverSubModelNum = partitionNum * _subModelNumber * iterationPerTime
     var dropModelNumBatch = 0
     var lossArray = new Array[Double](_subModelNumber)
@@ -526,9 +527,10 @@ object ParallelOptimizer {
         // differentiate partition models from each other by partition ID
         setModelId(localModel, partitionId)
         // register local parameter synchronizer
-        registerLocalSynchronizer(localModel, coresPerNode)
+     //   registerLocalSynchronizer(localModel, coresPerNode)
         // set parameter synchronizer
-        setDistriParameterSynchronizer(localModel, synchronizer, nExecutor, priorities)
+        setDistriPartitionsynchronizer(localModel, synchronizer, new mutable.HashMap[Int, Int](),
+          15)
         val localCriterion = broadcastCriterion.cloneCriterion()
         val localState = broadcastState.clone()
         val localMethod =
@@ -558,6 +560,57 @@ object ParallelOptimizer {
     models
   }
 
+  private def getExecutionOrder[T: ClassTag](module : Module[T]): ArrayBuffer[Module[T]] = {
+    val res = new ArrayBuffer[Module[T]]
+    if (module.isInstanceOf[Container[_, _, T]]) {
+      val subModules = module.asInstanceOf[Container[_, _, T]].modules
+      subModules.foreach(sub => {
+        res ++= getExecutionOrder(sub)
+      })
+    } else {
+      res += module
+    }
+    res
+  }
+
+  private def setDistriPartitionsynchronizer[T: ClassTag](model: Module[T],
+     parameterSynchronizer: DistriParameterSynchronizer[T],
+    barrierLayers: mutable.Map[Int, Int], slices: Int): Unit = {
+    val globalWeights = model.getParameters()._1
+    val globalGrads = model.getParameters()._2
+    val totalSize = globalGrads.nElement
+    println(s"total size is ${totalSize}")
+    val executorOrders = getExecutionOrder(model)
+    var i = executorOrders.length - 1
+    val size = totalSize / slices - 1
+    println(s"each partition size is ${size}")
+    val extraSize = totalSize - size * (slices - 1)
+    var lastOffSet = totalSize
+    while (i >= 0) {
+      val currModule = executorOrders(i)
+      if (currModule.parameters() != null) {
+        val grads = currModule.getParameters()._1
+        val offSet = grads.storageOffset - 1
+        val index = if (offSet == 0) 0 else (offSet - 1) / size + 1
+        val currParSize = lastOffSet - offSet
+        if (index < slices) {
+          if (!barrierLayers.contains(index)) {
+            barrierLayers.put(index, offSet)
+            val weightsPar = globalWeights.narrow(1, offSet + 1, currParSize)
+            val gradsPar = globalGrads.narrow(1, offSet + 1, currParSize)
+            println(s"~~~~~~~~~~~~~~~~~priority for ${currModule.getName} is" +
+              s"${i}, offset ${gradsPar.storageOffset() - 1}, length is ${gradsPar.nElement()} ")
+            parameterSynchronizer.init(currModule.getName, currParSize,
+              executorOrders.length - i, weightsPar, gradsPar)
+            currModule.setParameterSynchronizer(parameterSynchronizer)
+            lastOffSet = offSet
+          }
+        }
+      }
+      i -= 1
+    }
+  }
+
   private def setDistriParameterSynchronizer[T: ClassTag](model: Module[T],
     parameterSynchronizer: DistriParameterSynchronizer[T],
     partitionNum: Int, priorities: mutable.Map[String, Int]): Unit = {
@@ -566,10 +619,11 @@ object ParallelOptimizer {
     if (priorities.contains(model.getName)) {
       println(s"~~~~~~~~~~~~~~~~~priority for ${model.getName} is" +
         s"${priorities.get(model.getName).get} ")
-      parameterSynchronizer.init(model.getName, parameterSize, priorities.get(model.getName).get)
+      parameterSynchronizer.init(model.getName, parameterSize,
+        priorities.get(model.getName).get, null, null)
     } else {
       println(s"~~~~~~~~~~~~~~~~~~~~ default priority for ${model.getName}")
-      parameterSynchronizer.init(model.getName, parameterSize)
+    //  parameterSynchronizer.init(model.getName, parameterSize,null)
     }
     if (model.isInstanceOf[Container[_, _, T]]) {
       model.asInstanceOf[Container[_, _, T]].modules.
@@ -945,16 +999,27 @@ class ParallelOptimizer[T: ClassTag] (
           validationSummary,
           isOverWrite
         )
-        models.mapPartitions(iter => {
+        val nodeNum = Engine.nodeNumber
+        val statistics = models.mapPartitions(iter => {
           val model = iter.next().localModels.head
-          if (model.isInstanceOf[com.intel.analytics.bigdl.nn.Sequential[T]]) {
-            val times = model.asInstanceOf[com.intel.analytics.bigdl.nn.Sequential[T]].getTimeStatistics()
-            println(s"~~~~~~~~~Total forwardtime ${times._1}, total forward computing time " +
-              s"${times._2}, total syncGradtime ${times._3}, total updateweights time " +
-              s"${times._4}, total backwardtime ${times._5}")
+          val times = if (model.isInstanceOf[com.intel.analytics.bigdl.nn.mkldnn.Sequential]) {
+            model.asInstanceOf[com.intel.analytics.bigdl.nn.mkldnn.Sequential].
+              getTimeStatistics()
+          } else {
+            (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
           }
-          Iterator.empty
-        }).count
+          println(s"~~~~~~~~~Total forwardtime ${times._1}, total forward computing time " +
+            s"${times._2}, total syncGradtime ${times._3}, total updateweights time " +
+            s"${times._4}, total backwardtime ${times._5}," +
+            s"asyncGradient time ${times._6}")
+          Iterator.single(times)
+        }).reduce((a, b) => ((a._1 + b._1) / nodeNum,
+          (a._2 + b._2) / nodeNum, (a._3 + b._3) / nodeNum,
+          (a._4 + b._4) / nodeNum, (a._5 + b._5) / nodeNum, (a._6 + b._6)/ nodeNum))
+        println(s"~~~~~~~~~Total forwardtime ${statistics._1}, total forward computing time " +
+          s"${statistics._2}, total syncGradtime ${statistics._3}, total updateweights time " +
+          s"${statistics._4}, total backwardtime ${statistics._5}," +
+          s"asyncGradient time ${statistics._6}")
         retryNum = Int.MaxValue
       } catch {
         case e: IllegalArgumentException =>

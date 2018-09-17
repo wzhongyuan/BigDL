@@ -154,7 +154,7 @@ object TrainImageNet {
         .setOptimMethod(optimMethod)
         .setValidation(Trigger.everyEpoch,
           validateSet, Array(new Top1Accuracy[Float], new Top5Accuracy[Float]))
-        .setEndWhen(Trigger.maxEpoch(maxEpoch))
+        .setEndWhen(Trigger.maxIteration(120))
         .optimize()
       sc.stop()
     })
