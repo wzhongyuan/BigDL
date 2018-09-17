@@ -27,7 +27,6 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.concurrent.Callable
 
-import com.intel.analytics.bigdl.Test.getExecutionOrder
 import com.intel.analytics.bigdl.models.utils.ModelBroadcast
 import com.intel.analytics.bigdl.nn.mkldnn.MklDnnContainer
 import com.intel.analytics.bigdl.nn.mkldnn.Phase.TrainingPhase
@@ -145,7 +144,7 @@ object ParallelOptimizer {
     val warmupIterationNum = state.get[Int]("warmupIterationNum").get
     val computeThresholdbatchSize = state.get[Int]("computeThresholdbatchSize").get
     val maxDropPercentage = state.get[Double]("maxDropPercentage").get
-    val iterationPerTime = 5
+    val iterationPerTime = 2
     val driverSubModelNum = partitionNum * _subModelNumber * iterationPerTime
     var dropModelNumBatch = 0
     var lossArray = new Array[Double](_subModelNumber)
